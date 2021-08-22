@@ -1,8 +1,12 @@
+use std::convert::TryInto;
+
 #[derive(Debug)]
 pub enum Instruction {
     Const(f64),
     Mul,
     Add,
+    Load,
+    Store,
 }
 
 pub struct Machine {
@@ -14,8 +18,16 @@ impl Machine {
     pub fn new(mem_size: usize) -> Self {
         Machine {
             stack: Vec::new(),
-            memory: Vec::with_capacity(mem_size),
+            memory: vec![0;mem_size],
         }
+    }
+
+    pub fn load(&mut self, addr: usize) -> f64 {
+        f64::from_le_bytes(self.memory[addr..addr + 8].try_into().unwrap())
+    }
+
+    pub fn store(&mut self, addr: usize, val: f64) {
+        self.memory[addr..addr + 8].copy_from_slice(&val.to_le_bytes());
     }
 
     pub fn push(&mut self, item: f64) {
@@ -41,6 +53,16 @@ impl Machine {
                     let left = self.pop().unwrap();
                     self.push(left * right);
                 }
+                Instruction::Load => {
+                    let addr = self.pop().unwrap();
+                    let val = self.load(addr as usize);
+                    self.push(val);
+                }
+                Instruction::Store => {
+                    let val = self.pop().unwrap();
+                    let addr = self.pop().unwrap();
+                    self.store(addr as usize, val)
+                }
             }
         }
     }
@@ -59,8 +81,31 @@ mod tests {
             Instruction::Add,
         ];
 
-        let mut m = Machine::new();
+        let mut m = Machine::new(100);
         m.execute(code);
         println!("Result: {}", m.pop().unwrap());
+    }
+    #[test]
+    fn example_variables() {
+        let x_addr = 22.0;
+        let v_addr = 42.0;
+
+        let code = vec![
+            Instruction::Const(x_addr),
+            Instruction::Const(x_addr),
+            Instruction::Load,
+            Instruction::Const(v_addr),
+            Instruction::Load,
+            Instruction::Const(0.1),
+            Instruction::Mul,
+            Instruction::Add,
+            Instruction::Store,
+        ];
+
+        let mut m = Machine::new(65536);
+        m.store(x_addr as usize, 2.0);
+        m.store(v_addr as usize, 3.0);
+        m.execute(code);
+        println!("Result: {}", m.load(x_addr as usize));
     }
 }
