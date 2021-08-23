@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::TryInto;
 
 #[derive(Debug)]
@@ -7,8 +8,24 @@ pub enum Instruction {
     Add,
     Load,
     Store,
+    Function(usize, HashMap<usize, &f64>)
 }
 
+pub struct Function {
+    nparams: usize,
+    returns: bool,
+    code: usize,
+}
+
+impl Function {
+    pub fn new(nparams: usize, returns: bool, code: usize) -> Self {
+        Function {
+            nparams,
+            returns,
+            code,
+        }
+    }
+}
 pub struct Machine {
     stack: Vec<f64>,
     memory: Vec<u8>,
@@ -18,7 +35,7 @@ impl Machine {
     pub fn new(mem_size: usize) -> Self {
         Machine {
             stack: Vec::new(),
-            memory: vec![0;mem_size],
+            memory: vec![0; mem_size],
         }
     }
 
@@ -36,6 +53,21 @@ impl Machine {
 
     pub fn pop(&mut self) -> Option<f64> {
         self.stack.pop()
+    }
+
+    pub fn call(&mut self, func: Function, args: Vec<f64>) -> Option<f64> {
+        let mut locals = HashMap::new();
+        args.iter().enumerate().for_each(|(index, val)| {
+            locals.insert(index, val);
+        });
+
+        self.execute(vec![Instruction::Function(func.code, locals)]);
+
+        if func.returns {
+            self.pop()
+        } else {
+            None
+        }
     }
 
     pub fn execute(&mut self, instructions: Vec<Instruction>) {
@@ -84,6 +116,29 @@ mod tests {
         let mut m = Machine::new(100);
         m.execute(code);
         println!("Result: {}", m.pop().unwrap());
+    }
+    #[test]
+    fn example_variables() {
+        let x_addr = 22.0;
+        let v_addr = 42.0;
+
+        let code = vec![
+            Instruction::Const(x_addr),
+            Instruction::Const(x_addr),
+            Instruction::Load,
+            Instruction::Const(v_addr),
+            Instruction::Load,
+            Instruction::Const(0.1),
+            Instruction::Mul,
+            Instruction::Add,
+            Instruction::Store,
+        ];
+
+        let mut m = Machine::new(65536);
+        m.store(x_addr as usize, 2.0);
+        m.store(v_addr as usize, 3.0);
+        m.execute(code);
+        println!("Result: {}", m.load(x_addr as usize));
     }
     #[test]
     fn example_variables() {
