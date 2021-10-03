@@ -8,17 +8,20 @@ pub enum Instruction {
     Add,
     Load,
     Store,
-    Function(usize, HashMap<usize, &f64>)
+    LocalGet(usize),
+    LocalSet(usize),
+    CallFunc(usize),
 }
 
+#[derive(Debug, Clone)]
 pub struct Function {
     nparams: usize,
     returns: bool,
-    code: usize,
+    code: Vec<Instruction>,
 }
 
 impl Function {
-    pub fn new(nparams: usize, returns: bool, code: usize) -> Self {
+    pub fn new(nparams: usize, returns: bool, code: Vec<Instruction>) -> Self {
         Function {
             nparams,
             returns,
@@ -29,13 +32,15 @@ impl Function {
 pub struct Machine {
     stack: Vec<f64>,
     memory: Vec<u8>,
+    functions: Vec<Function>,
 }
 
 impl Machine {
-    pub fn new(mem_size: usize) -> Self {
+    pub fn new(functions: Vec<Function>, mem_size: usize) -> Self {
         Machine {
             stack: Vec::new(),
             memory: vec![0; mem_size],
+            functions,
         }
     }
 
@@ -55,13 +60,13 @@ impl Machine {
         self.stack.pop()
     }
 
-    pub fn call(&mut self, func: Function, args: Vec<f64>) -> Option<f64> {
+    pub fn call(&mut self, func: &Function, args: Vec<f64>) -> Option<f64> {
         let mut locals = HashMap::new();
         args.iter().enumerate().for_each(|(index, val)| {
             locals.insert(index, val);
         });
 
-        self.execute(vec![Instruction::Function(func.code, locals)]);
+        self.execute(&func.code, &mut Some(locals));
 
         if func.returns {
             self.pop()
@@ -70,11 +75,15 @@ impl Machine {
         }
     }
 
-    pub fn execute(&mut self, instructions: Vec<Instruction>) {
+    pub fn execute(
+        &mut self,
+        instructions: &Vec<Instruction>,
+        locals: &mut Option<HashMap<usize, &f64>>,
+    ) {
         for instruction in instructions {
             println!("Op: {:?}, Stack: {:?}", instruction, self.stack);
             match instruction {
-                Instruction::Const(item) => self.push(item),
+                Instruction::Const(item) => self.push(*item),
                 Instruction::Add => {
                     let right = self.pop().unwrap();
                     let left = self.pop().unwrap();
@@ -95,6 +104,32 @@ impl Machine {
                     let addr = self.pop().unwrap();
                     self.store(addr as usize, val)
                 }
+                Instruction::LocalGet(index) => {
+                    if let Some(locals) = locals {
+                        self.push(*locals[&index]);
+                    } else {
+                        println!("No locals supplied");
+                    }
+                }
+                Instruction::LocalSet(_index) => {
+                    // if let Some(local_vars) = &mut locals {
+                    // local_vars[&index] = &self.pop().unwrap();
+                    // } else {
+                    // println!("No locals supplied");
+                    // }
+                }
+                Instruction::CallFunc(index) => {
+                    let func = &self.functions[*index].clone();
+                    let fargs = (0..func.nparams)
+                        .map(|_| self.pop().unwrap())
+                        .rev()
+                        .collect();
+
+                    let result = self.call(func, fargs);
+                    if func.returns {
+                        self.push(result.unwrap());
+                    }
+                }
             }
         }
     }
@@ -113,8 +148,8 @@ mod tests {
             Instruction::Add,
         ];
 
-        let mut m = Machine::new(100);
-        m.execute(code);
+        let mut m = Machine::new(vec![], 100);
+        m.execute(&code, &mut None);
         println!("Result: {}", m.pop().unwrap());
     }
     #[test]
@@ -134,14 +169,28 @@ mod tests {
             Instruction::Store,
         ];
 
-        let mut m = Machine::new(65536);
+        let mut m = Machine::new(vec![], 65536);
         m.store(x_addr as usize, 2.0);
         m.store(v_addr as usize, 3.0);
-        m.execute(code);
+        m.execute(&code, &mut None);
         println!("Result: {}", m.load(x_addr as usize));
     }
     #[test]
-    fn example_variables() {
+    fn example_functions() {
+        let update_position = Function::new(
+            3,
+            true,
+            vec![
+                Instruction::LocalGet(0), // x
+                Instruction::LocalGet(1), // v
+                Instruction::LocalGet(2), // dt
+                Instruction::Mul,
+                Instruction::Add,
+            ],
+        );
+
+        let functions = vec![update_position];
+
         let x_addr = 22.0;
         let v_addr = 42.0;
 
@@ -152,15 +201,14 @@ mod tests {
             Instruction::Const(v_addr),
             Instruction::Load,
             Instruction::Const(0.1),
-            Instruction::Mul,
-            Instruction::Add,
+            Instruction::CallFunc(0), // update_position
             Instruction::Store,
         ];
 
-        let mut m = Machine::new(65536);
+        let mut m = Machine::new(functions, 65536);
         m.store(x_addr as usize, 2.0);
         m.store(v_addr as usize, 3.0);
-        m.execute(code);
+        m.execute(&code, &mut None);
         println!("Result: {}", m.load(x_addr as usize));
     }
 }
