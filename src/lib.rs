@@ -13,7 +13,6 @@ pub enum Instruction {
     CallFunc(usize),
 }
 
-#[derive(Debug, Clone)]
 pub struct Function {
     nparams: usize,
     returns: bool,
@@ -119,14 +118,13 @@ impl Machine {
                     // }
                 }
                 Instruction::CallFunc(index) => {
-                    let func = &self.functions[*index].clone();
-                    let fargs = (0..func.nparams)
+                    let fargs = (0..self.functions[*index].nparams)
                         .map(|_| self.pop().unwrap())
                         .rev()
                         .collect();
 
-                    let result = self.call(func, fargs);
-                    if func.returns {
+                    let result = self.call(&self.functions[*index], fargs);
+                    if self.functions[*index].returns {
                         self.push(result.unwrap());
                     }
                 }
